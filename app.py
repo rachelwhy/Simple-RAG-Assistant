@@ -1,4 +1,4 @@
-# app.py - 清晰界面版DeepSeek RAG助手
+# app.py - 整文档上下文版（最通用）
 import streamlit as st
 import requests
 import PyPDF2
@@ -12,15 +12,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# 自定义CSS - 优化版
+# 自定义CSS
 st.markdown("""
 <style>
-    /* 全局样式 */
     .stApp {
-        background-color: #ffffff;
+        background-color: #f8f9fa;
     }
-
-    /* 主标题 */
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 2rem;
@@ -28,19 +25,7 @@ st.markdown("""
         color: white;
         margin-bottom: 2rem;
         text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .main-header h1 {
-        color: white;
-        font-size: 2.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .main-header p {
-        color: rgba(255,255,255,0.9);
-        font-size: 1.1rem;
-    }
-
-    /* 消息样式 */
     .user-message {
         background-color: #e3f2fd;
         border: 1px solid #bbdefb;
@@ -48,7 +33,6 @@ st.markdown("""
         padding: 1rem;
         margin: 0.5rem 0;
         color: #000000;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .assistant-message {
         background-color: #f5f5f5;
@@ -57,36 +41,19 @@ st.markdown("""
         padding: 1rem;
         margin: 0.5rem 0;
         color: #000000;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .message-role {
         font-weight: bold;
         margin-bottom: 0.5rem;
         color: #333333;
     }
-    .message-content {
-        color: #000000;
-        line-height: 1.5;
-    }
-
-    /* 输入框样式 */
     .stTextInput > div > div > input {
         background-color: #ffffff;
         border: 2px solid #e0e0e0;
         border-radius: 25px;
         padding: 0.75rem 1.5rem;
         color: #000000;
-        font-size: 1rem;
     }
-    .stTextInput > div > div > input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
-    }
-    .stTextInput > div > div > input::placeholder {
-        color: #999999;
-    }
-
-    /* 按钮样式 */
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -94,27 +61,7 @@ st.markdown("""
         border-radius: 25px;
         padding: 0.75rem 2rem;
         font-weight: bold;
-        font-size: 1rem;
-        transition: all 0.3s ease;
     }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-    }
-
-    /* 侧边栏样式 */
-    .css-1d391kg {
-        background-color: #f8f9fa;
-    }
-
-    /* 分割线 */
-    hr {
-        margin: 2rem 0;
-        border: none;
-        border-top: 2px solid #e0e0e0;
-    }
-
-    /* 成功消息 */
     .success-box {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
@@ -123,8 +70,6 @@ st.markdown("""
         border-radius: 5px;
         margin: 0.5rem 0;
     }
-
-    /* 错误消息 */
     .error-box {
         background-color: #f8d7da;
         border: 1px solid #f5c6cb;
@@ -133,8 +78,6 @@ st.markdown("""
         border-radius: 5px;
         margin: 0.5rem 0;
     }
-
-    /* 信息框 */
     .info-box {
         background-color: #d1ecf1;
         border: 1px solid #bee5eb;
@@ -142,35 +85,6 @@ st.markdown("""
         padding: 0.75rem;
         border-radius: 5px;
         margin: 0.5rem 0;
-    }
-
-    /* 文档统计卡片 */
-    .stat-card {
-        background-color: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .stat-label {
-        color: #666666;
-        font-size: 0.9rem;
-    }
-    .stat-value {
-        color: #000000;
-        font-size: 1.5rem;
-        font-weight: bold;
-    }
-
-    /* 文档列表 */
-    .doc-item {
-        background-color: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 5px;
-        padding: 0.5rem;
-        margin: 0.25rem 0;
-        color: #000000;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -250,25 +164,14 @@ with st.sidebar:
                     else:
                         content = file.getvalue().decode('utf-8', errors='ignore')
 
-                    # 分块处理
-                    chunks = []
-                    paragraphs = content.split('\n\n')
-                    for p in paragraphs:
-                        if len(p.strip()) > 50:
-                            chunks.append(p.strip())
-
-                    # 如果段落太少，按句子分
-                    if len(chunks) < 3:
-                        sentences = content.replace('\n', ' ').split('。')
-                        chunks = [s.strip() + '。' for s in sentences if len(s.strip()) > 30]
-
                     st.session_state.documents[file.name] = {
                         'content': content,
-                        'chunks': chunks
+                        'type': file.name.split('.')[-1],
+                        'size': len(content)
                     }
                     st.markdown(f"""
                     <div class="success-box">
-                        ✅ {file.name} ({len(chunks)}段)
+                        ✅ {file.name} ({len(content)}字符)
                     </div>
                     """, unsafe_allow_html=True)
                 except Exception as e:
@@ -285,11 +188,7 @@ with st.sidebar:
         for name in list(st.session_state.documents.keys()):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown(f"""
-                <div class="doc-item">
-                    📄 {name[:30]}
-                </div>
-                """, unsafe_allow_html=True)
+                st.caption(f"📄 {name[:30]}")
             with col2:
                 if st.button("❌", key=f"del_{name}"):
                     del st.session_state.documents[name]
@@ -307,7 +206,8 @@ with st.sidebar:
         <b>📖 使用说明</b><br>
         1. 输入DeepSeek API密钥<br>
         2. 上传文档<br>
-        3. 在下方提问
+        3. 在下方提问<br>
+        4. AI会阅读整个文档回答
     </div>
     """, unsafe_allow_html=True)
 
@@ -362,96 +262,86 @@ if send_button and question:
         # 添加用户消息
         st.session_state.messages.append({"role": "user", "content": question})
 
-        # 检索相关文档
-        relevant_chunks = []
-        question_lower = question.lower()
-        keywords = [w for w in question_lower.split() if len(w) > 1]
+        # 生成回答
+        with st.spinner("🤔 AI正在阅读文档并思考..."):
+            try:
+                # 1. 把所有文档内容合并成一个大上下文
+                full_context = ""
+                for name, info in st.session_state.documents.items():
+                    # 限制每个文档长度，避免超过token限制（DeepSeek 128K上下文）
+                    content = info['content'][:30000]  # 每个文档最多取3万字
+                    full_context += f"\n\n【文档：{name}】\n{content}"
 
-        for name, info in st.session_state.documents.items():
-            for chunk in info['chunks']:
-                chunk_lower = chunk.lower()
-                score = sum(1 for word in keywords if word in chunk_lower)
-                if score > 0:
-                    relevant_chunks.append({
-                        'file': name,
-                        'content': chunk,
-                        'score': score
-                    })
+                # 如果总长度太长，截断
+                if len(full_context) > 100000:
+                    full_context = full_context[:100000] + "...（文档过长已截断）"
 
-        # 排序
-        relevant_chunks.sort(key=lambda x: x['score'], reverse=True)
-        top_chunks = relevant_chunks[:3]
+                # 2. 调用DeepSeek API
+                headers = {
+                    "Authorization": f"Bearer {st.session_state.api_key}",
+                    "Content-Type": "application/json"
+                }
 
-        # 构建上下文
-        if top_chunks:
-            context = "\n\n---\n\n".join([f"【{c['file']}】\n{c['content']}" for c in top_chunks])
-        else:
-            # 如果没有匹配，用整个文档
-            context = "\n\n---\n\n".join([f"【{name}】\n{info['content'][:1000]}"
-                                          for name, info in st.session_state.documents.items()])
+                system_prompt = """你是一个专业的文档分析助手。请基于提供的文档内容回答问题。
 
-        # 调用API
-        try:
-            headers = {
-                "Authorization": f"Bearer {st.session_state.api_key}",
-                "Content-Type": "application/json"
-            }
+重要规则：
+1. 仔细阅读所有文档内容，理解每个文档的主题和关键信息
+2. 根据用户的问题，从文档中找出相关信息并回答
+3. 如果文档中有相关内容，请详细回答并注明信息来源（哪个文档）
+4. 如果文档中没有相关信息，请明确说"根据当前文档，我无法回答这个问题"
+5. 回答要准确、具体、有条理"""
 
-            system_prompt = """你是一个专业的文档问答助手。请基于提供的文档内容回答问题。
-如果文档中有相关信息，请详细回答。如果文档中没有相关信息，请说"根据当前文档，我无法回答这个问题"。
-回答要准确、简洁。"""
+                user_prompt = f"""请阅读以下所有文档，然后回答问题。
 
-            user_prompt = f"""文档内容：
-{context}
+文档内容：
+{full_context}
 
 问题：{question}
 
-请回答："""
+请基于以上文档内容回答："""
 
-            data = {
-                "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.3,
-                "max_tokens": 2000
-            }
+                data = {
+                    "model": "deepseek-chat",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 4000
+                }
 
-            response = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
-                headers=headers,
-                json=data,
-                timeout=30
-            )
+                response = requests.post(
+                    "https://api.deepseek.com/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=60
+                )
 
-            if response.status_code == 200:
-                result = response.json()
-                answer = result['choices'][0]['message']['content']
+                if response.status_code == 200:
+                    result = response.json()
+                    answer = result['choices'][0]['message']['content']
 
-                # 添加来源
-                if top_chunks:
-                    answer += "\n\n---\n📖 **参考来源**"
-                    for c in top_chunks[:2]:
-                        preview = c['content'][:100] + "..."
-                        answer += f"\n• {c['file']}: {preview}"
+                    # 添加提示信息
+                    answer += "\n\n---\n💡 *回答基于您上传的所有文档*"
 
-                st.session_state.messages.append({"role": "assistant", "content": answer})
-            else:
-                error_msg = f"API错误: {response.status_code}"
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                else:
+                    error_msg = f"API错误: {response.status_code}"
+                    if response.status_code == 413:
+                        error_msg = "文档过长，请减少上传的文档数量或大小"
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+                st.rerun()
+
+            except Exception as e:
+                error_msg = f"错误: {str(e)}"
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-            st.rerun()
-
-        except Exception as e:
-            error_msg = f"错误: {str(e)}"
-            st.session_state.messages.append({"role": "assistant", "content": error_msg})
-            st.rerun()
+                st.rerun()
 
 # 底部
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666666; padding: 1rem;'>
-    基于 DeepSeek API + Streamlit 构建 | 需要有效的API密钥
+    基于 DeepSeek API + Streamlit 构建 | 直接阅读整文档，无需检索
 </div>
 """, unsafe_allow_html=True)
