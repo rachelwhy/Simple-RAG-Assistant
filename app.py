@@ -1,4 +1,4 @@
-# app.py - 稳定版DeepSeek RAG助手
+# app.py - 清晰界面版DeepSeek RAG助手
 import streamlit as st
 import requests
 import PyPDF2
@@ -12,12 +12,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# 自定义CSS
+# 自定义CSS - 优化版
 st.markdown("""
 <style>
+    /* 全局样式 */
     .stApp {
-        background-color: #f8f9fa;
+        background-color: #ffffff;
     }
+
+    /* 主标题 */
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 2rem;
@@ -25,33 +28,149 @@ st.markdown("""
         color: white;
         margin-bottom: 2rem;
         text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .chat-container {
-        background-color: white;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .main-header h1 {
+        color: white;
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
     }
+    .main-header p {
+        color: rgba(255,255,255,0.9);
+        font-size: 1.1rem;
+    }
+
+    /* 消息样式 */
     .user-message {
         background-color: #e3f2fd;
+        border: 1px solid #bbdefb;
+        border-radius: 15px 15px 0 15px;
         padding: 1rem;
-        border-radius: 10px;
         margin: 0.5rem 0;
+        color: #000000;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .assistant-message {
         background-color: #f5f5f5;
+        border: 1px solid #e0e0e0;
+        border-radius: 15px 15px 15px 0;
         padding: 1rem;
-        border-radius: 10px;
+        margin: 0.5rem 0;
+        color: #000000;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .message-role {
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+        color: #333333;
+    }
+    .message-content {
+        color: #000000;
+        line-height: 1.5;
+    }
+
+    /* 输入框样式 */
+    .stTextInput > div > div > input {
+        background-color: #ffffff;
+        border: 2px solid #e0e0e0;
+        border-radius: 25px;
+        padding: 0.75rem 1.5rem;
+        color: #000000;
+        font-size: 1rem;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+    }
+    .stTextInput > div > div > input::placeholder {
+        color: #999999;
+    }
+
+    /* 按钮样式 */
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        padding: 0.75rem 2rem;
+        font-weight: bold;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+    }
+
+    /* 侧边栏样式 */
+    .css-1d391kg {
+        background-color: #f8f9fa;
+    }
+
+    /* 分割线 */
+    hr {
+        margin: 2rem 0;
+        border: none;
+        border-top: 2px solid #e0e0e0;
+    }
+
+    /* 成功消息 */
+    .success-box {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+        padding: 0.75rem;
+        border-radius: 5px;
         margin: 0.5rem 0;
     }
-    .stTextInput > div > div > input {
-        border-radius: 20px;
+
+    /* 错误消息 */
+    .error-box {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        padding: 0.75rem;
+        border-radius: 5px;
+        margin: 0.5rem 0;
     }
-    .stButton > button {
-        border-radius: 20px;
-        background-color: #667eea;
-        color: white;
+
+    /* 信息框 */
+    .info-box {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        color: #0c5460;
+        padding: 0.75rem;
+        border-radius: 5px;
+        margin: 0.5rem 0;
+    }
+
+    /* 文档统计卡片 */
+    .stat-card {
+        background-color: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .stat-label {
+        color: #666666;
+        font-size: 0.9rem;
+    }
+    .stat-value {
+        color: #000000;
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+
+    /* 文档列表 */
+    .doc-item {
+        background-color: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        padding: 0.5rem;
+        margin: 0.25rem 0;
+        color: #000000;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -76,7 +195,7 @@ st.markdown("""
 
 # 侧边栏
 with st.sidebar:
-    st.header("🔑 API设置")
+    st.markdown("## 🔑 API设置")
 
     # API密钥输入
     api_key_input = st.text_input(
@@ -91,19 +210,28 @@ with st.sidebar:
         st.session_state.api_key = api_key_input
         if api_key_input.startswith("sk-"):
             st.session_state.api_key_valid = True
-            st.success("✅ API密钥已设置")
+            st.markdown("""
+            <div class="success-box">
+                ✅ API密钥已设置
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.session_state.api_key_valid = False
-            st.error("❌ API密钥格式不正确")
+            st.markdown("""
+            <div class="error-box">
+                ❌ API密钥格式不正确
+            </div>
+            """, unsafe_allow_html=True)
 
-    st.divider()
+    st.markdown("---")
 
     # 文档上传
-    st.header("📁 文档上传")
+    st.markdown("## 📁 文档上传")
     uploaded_files = st.file_uploader(
         "选择文件",
         type=['txt', 'pdf', 'docx', 'md', 'py', 'js', 'html', 'css', 'cpp', 'java'],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        label_visibility="collapsed"
     )
 
     if uploaded_files:
@@ -138,18 +266,30 @@ with st.sidebar:
                         'content': content,
                         'chunks': chunks
                     }
-                    st.success(f"✅ {file.name} ({len(chunks)}段)")
+                    st.markdown(f"""
+                    <div class="success-box">
+                        ✅ {file.name} ({len(chunks)}段)
+                    </div>
+                    """, unsafe_allow_html=True)
                 except Exception as e:
-                    st.error(f"❌ {file.name}: {str(e)}")
+                    st.markdown(f"""
+                    <div class="error-box">
+                        ❌ {file.name}: {str(e)}
+                    </div>
+                    """, unsafe_allow_html=True)
 
     # 文档列表
     if st.session_state.documents:
-        st.divider()
-        st.header("📋 已加载文档")
+        st.markdown("---")
+        st.markdown("## 📋 已加载文档")
         for name in list(st.session_state.documents.keys()):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.caption(f"📄 {name[:30]}")
+                st.markdown(f"""
+                <div class="doc-item">
+                    📄 {name[:30]}
+                </div>
+                """, unsafe_allow_html=True)
             with col2:
                 if st.button("❌", key=f"del_{name}"):
                     del st.session_state.documents[name]
@@ -161,38 +301,45 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-    st.divider()
-    st.info("""
-    **使用说明**:
-    1. 输入DeepSeek API密钥
-    2. 上传文档
-    3. 在下方提问
-    """)
+    st.markdown("---")
+    st.markdown("""
+    <div class="info-box">
+        <b>📖 使用说明</b><br>
+        1. 输入DeepSeek API密钥<br>
+        2. 上传文档<br>
+        3. 在下方提问
+    </div>
+    """, unsafe_allow_html=True)
 
 # 主界面
-st.header("💬 智能问答")
+st.markdown("## 💬 智能问答")
 
 # 显示聊天历史
 for message in st.session_state.messages:
     if message["role"] == "user":
         st.markdown(f"""
         <div class="user-message">
-            <b>👤 你:</b><br>
-            {message["content"]}
+            <div class="message-role">👤 你</div>
+            <div class="message-content">{message["content"]}</div>
         </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown(f"""
         <div class="assistant-message">
-            <b>🤖 AI:</b><br>
-            {message["content"]}
+            <div class="message-role">🤖 AI助手</div>
+            <div class="message-content">{message["content"]}</div>
         </div>
         """, unsafe_allow_html=True)
 
-# 输入框和按钮
+# 输入区域
 col1, col2 = st.columns([5, 1])
 with col1:
-    question = st.text_input("", placeholder="请输入您的问题...", label_visibility="collapsed")
+    question = st.text_input(
+        "",
+        placeholder="请输入您的问题...",
+        label_visibility="collapsed",
+        key="question_input"
+    )
 with col2:
     send_button = st.button("发送", type="primary", use_container_width=True)
 
@@ -200,9 +347,17 @@ with col2:
 if send_button and question:
     # 验证
     if not st.session_state.api_key_valid:
-        st.error("请先设置有效的API密钥")
+        st.markdown("""
+        <div class="error-box">
+            ❌ 请先设置有效的API密钥
+        </div>
+        """, unsafe_allow_html=True)
     elif not st.session_state.documents:
-        st.error("请先上传文档")
+        st.markdown("""
+        <div class="error-box">
+            ❌ 请先上传文档
+        </div>
+        """, unsafe_allow_html=True)
     else:
         # 添加用户消息
         st.session_state.messages.append({"role": "user", "content": question})
@@ -294,5 +449,9 @@ if send_button and question:
             st.rerun()
 
 # 底部
-st.divider()
-st.caption("基于 DeepSeek API 构建 | 需要有效的API密钥")
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666666; padding: 1rem;'>
+    基于 DeepSeek API + Streamlit 构建 | 需要有效的API密钥
+</div>
+""", unsafe_allow_html=True)
