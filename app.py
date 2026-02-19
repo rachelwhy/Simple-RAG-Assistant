@@ -1,18 +1,15 @@
-# app.py
+# app.py - 完整的DeepSeek RAG助手
 import streamlit as st
 import os
 import requests
-import json
 import PyPDF2
 from docx import Document
-from typing import List, Dict
 import hashlib
-import time
 
 # 页面配置
 st.set_page_config(
-    page_title="DeepSeek RAG智能助手",
-    page_icon="🤖",
+    page_title="Simple RAG Assistant",
+    page_icon="📚",
     layout="wide"
 )
 
@@ -20,29 +17,15 @@ st.set_page_config(
 st.markdown("""
 <style>
     .stApp {
+        background-color: #f8f9fa;
+    }
+    .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .main-container {
-        background-color: rgba(255, 255, 255, 0.95);
-        border-radius: 20px;
         padding: 2rem;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    .header {
-        text-align: center;
-        color: white;
-        padding: 2rem;
-        margin-bottom: 1rem;
-    }
-    .header h1 {
-        font-size: 3rem;
-        margin-bottom: 0.5rem;
-    }
-    .api-status {
-        background-color: #f0f2f6;
-        padding: 0.5rem 1rem;
         border-radius: 10px;
-        margin-bottom: 1rem;
+        color: white;
+        margin-bottom: 2rem;
+        text-align: center;
     }
     .success-box {
         background-color: #d4edda;
@@ -50,6 +33,7 @@ st.markdown("""
         padding: 1rem;
         border-radius: 10px;
         border-left: 4px solid #28a745;
+        margin-bottom: 1rem;
     }
     .warning-box {
         background-color: #fff3cd;
@@ -57,20 +41,18 @@ st.markdown("""
         padding: 1rem;
         border-radius: 10px;
         border-left: 4px solid #ffc107;
+        margin-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # 标题
 st.markdown("""
-<div class="header">
-    <h1>🤖 DeepSeek RAG智能助手</h1>
-    <p>上传文档，AI智能问答 - 基于DeepSeek大模型</p>
+<div class="main-header">
+    <h1>📚 Simple RAG Assistant</h1>
+    <p>基于DeepSeek的智能文档问答助手 | 上传文档，开始提问</p>
 </div>
 """, unsafe_allow_html=True)
-
-# 主容器
-st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
 # 初始化session state
 if 'messages' not in st.session_state:
@@ -79,62 +61,42 @@ if 'documents' not in st.session_state:
     st.session_state.documents = {}
 if 'api_key_valid' not in st.session_state:
     st.session_state.api_key_valid = False
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = ""
 
-# 侧边栏 - API设置
+# 侧边栏
 with st.sidebar:
-    st.markdown("### 🔑 DeepSeek API设置")
+    st.markdown("## 🔑 API设置")
 
-    # API密钥输入
+    # DeepSeek API密钥输入
     api_key = st.text_input(
-        "输入你的DeepSeek API密钥",
+        "DeepSeek API密钥",
         type="password",
+        placeholder="sk-...",
         help="在 https://platform.deepseek.com/ 获取",
-        placeholder="sk-..."
+        value=st.session_state.api_key
     )
 
     if api_key:
-        # 验证API密钥
-        try:
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            test_data = {
-                "model": "deepseek-chat",
-                "messages": [{"role": "user", "content": "test"}],
-                "max_tokens": 5
-            }
-            response = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
-                headers=headers,
-                json=test_data,
-                timeout=5
-            )
-            if response.status_code == 200:
-                st.session_state.api_key_valid = True
-                st.session_state.api_key = api_key
-                st.markdown("""
-                <div class="success-box">
-                    ✅ API密钥验证成功
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.session_state.api_key_valid = False
-                st.markdown("""
-                <div class="warning-box">
-                    ❌ API密钥无效
-                </div>
-                """, unsafe_allow_html=True)
-        except:
+        st.session_state.api_key = api_key
+        # 简单验证API密钥格式
+        if api_key.startswith("sk-"):
+            st.session_state.api_key_valid = True
+            st.markdown("""
+            <div class="success-box">
+                ✅ API密钥已设置
+            </div>
+            """, unsafe_allow_html=True)
+        else:
             st.session_state.api_key_valid = False
             st.markdown("""
             <div class="warning-box">
-                ❌ 无法连接到DeepSeek API
+                ❌ API密钥格式不正确
             </div>
             """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("### 📁 文档管理")
+    st.markdown("## 📁 文档上传")
 
     # 文件上传
     uploaded_files = st.file_uploader(
@@ -163,6 +125,8 @@ with st.sidebar:
 
                         # 分块处理（按段落）
                         chunks = [c.strip() for c in content.split('\n\n') if len(c.strip()) > 50]
+                        if not chunks:  # 如果没有分段，按句子分
+                            chunks = [c.strip() for c in content.split('。') if len(c.strip()) > 30]
 
                         st.session_state.documents[file.name] = {
                             'content': content,
@@ -201,7 +165,10 @@ with st.sidebar:
     4. AI会基于文档内容回答
     """)
 
-# 主界面
+    st.markdown("### 🔗 链接")
+    st.markdown("[GitHub仓库](https://github.com/rachelwhy/Simple-RAG-Assistant)")
+
+# 主界面 - 左右两列
 col1, col2 = st.columns([2, 1])
 
 with col2:
@@ -209,14 +176,21 @@ with col2:
         st.markdown("### 📊 文档统计")
         total_docs = len(st.session_state.documents)
         total_chunks = sum(len(info['chunks']) for info in st.session_state.documents.values())
+        total_chars = sum(info['size'] for info in st.session_state.documents.values())
 
+        # 显示统计信息
         st.metric("文档数量", total_docs)
         st.metric("文本段落", total_chunks)
+        st.metric("总字符数", f"{total_chars:,}")
 
-        # 文档列表
-        with st.expander("📑 文档详情"):
-            for name, info in st.session_state.documents.items():
-                st.text(f"• {name} ({len(info['chunks'])}段)")
+        # 文档类型分布
+        if total_docs > 0:
+            st.markdown("### 📑 文档类型")
+            types = {}
+            for info in st.session_state.documents.values():
+                types[info['type']] = types.get(info['type'], 0) + 1
+            for t, count in types.items():
+                st.text(f"• {t}: {count}个")
 
 with col1:
     st.markdown("### 💬 智能问答")
@@ -226,107 +200,126 @@ with col1:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # 输入问题
-    if prompt := st.chat_input("请输入您的问题..."):
-        # 检查API密钥
-        if not st.session_state.get('api_key_valid', False):
-            st.warning("⚠️ 请在左侧输入有效的DeepSeek API密钥")
-        else:
-            # 添加用户消息
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
+# ⚠️ 重要：chat_input 必须放在所有容器外面
+if prompt := st.chat_input("请输入您的问题..."):
+    # 检查API密钥
+    if not st.session_state.get('api_key_valid', False):
+        st.warning("⚠️ 请在左侧输入有效的DeepSeek API密钥")
+    elif not st.session_state.documents:
+        st.warning("⚠️ 请先在左侧上传文档")
+    else:
+        # 添加用户消息
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-            # 生成回答
-            with st.chat_message("assistant"):
-                with st.spinner("🤔 DeepSeek正在思考..."):
-                    try:
-                        # 1. 检索相关文档内容
-                        relevant_chunks = []
-                        if st.session_state.documents:
-                            prompt_words = set(prompt.lower().split())
-                            for name, info in st.session_state.documents.items():
-                                for chunk in info['chunks']:
-                                    chunk_words = set(chunk.lower().split())
-                                    overlap = len(prompt_words & chunk_words)
-                                    if overlap > 0:
-                                        relevant_chunks.append({
-                                            'file': name,
-                                            'content': chunk,
-                                            'relevance': overlap
-                                        })
+        # 生成回答
+        with st.chat_message("assistant"):
+            with st.spinner("🤔 DeepSeek正在思考..."):
+                try:
+                    # 1. 检索相关文档内容
+                    relevant_chunks = []
+                    if st.session_state.documents:
+                        prompt_words = set(prompt.lower().split())
+                        for name, info in st.session_state.documents.items():
+                            for chunk in info['chunks']:
+                                chunk_words = set(chunk.lower().split())
+                                overlap = len(prompt_words & chunk_words)
+                                if overlap > 0:
+                                    relevant_chunks.append({
+                                        'file': name,
+                                        'content': chunk,
+                                        'relevance': overlap
+                                    })
 
-                            # 按相关性排序
-                            relevant_chunks.sort(key=lambda x: x['relevance'], reverse=True)
-                            context = "\n\n".join([f"[来自 {c['file']}]:\n{c['content']}"
-                                                   for c in relevant_chunks[:5]])
+                        # 按相关性排序
+                        relevant_chunks.sort(key=lambda x: x['relevance'], reverse=True)
+
+                        if relevant_chunks:
+                            context = "\n\n---\n\n".join([f"【来自 {c['file']}】\n{c['content']}"
+                                                          for c in relevant_chunks[:5]])
                         else:
-                            context = "没有上传任何文档"
+                            context = "没有找到相关文档内容"
+                    else:
+                        context = "没有上传任何文档"
 
-                        # 2. 构建提示词
-                        system_prompt = """你是一个专业的文档问答助手。请基于提供的文档内容回答问题。
+                    # 2. 构建提示词
+                    system_prompt = """你是一个专业的文档问答助手。请严格基于提供的文档内容回答问题。
 如果文档中没有相关信息，请明确告知用户"根据当前文档，我无法回答这个问题"。
-回答要准确、简洁、有条理。"""
+回答要准确、简洁、有条理，使用中文。"""
 
-                        user_prompt = f"""文档内容：
+                    user_prompt = f"""请基于以下文档内容回答问题：
+
+文档内容：
 {context}
 
 问题：{prompt}
 
-请基于以上文档内容回答问题："""
+回答："""
 
-                        # 3. 调用DeepSeek API
-                        headers = {
-                            "Authorization": f"Bearer {st.session_state.api_key}",
-                            "Content-Type": "application/json"
-                        }
+                    # 3. 调用DeepSeek API
+                    headers = {
+                        "Authorization": f"Bearer {st.session_state.api_key}",
+                        "Content-Type": "application/json"
+                    }
 
-                        data = {
-                            "model": "deepseek-chat",
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
-                            "temperature": 0.3,
-                            "max_tokens": 2000,
-                            "stream": False
-                        }
+                    data = {
+                        "model": "deepseek-chat",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 2000,
+                        "stream": False
+                    }
 
-                        response = requests.post(
-                            "https://api.deepseek.com/v1/chat/completions",
-                            headers=headers,
-                            json=data
-                        )
+                    response = requests.post(
+                        "https://api.deepseek.com/v1/chat/completions",
+                        headers=headers,
+                        json=data,
+                        timeout=30
+                    )
 
-                        if response.status_code == 200:
-                            result = response.json()
-                            answer = result['choices'][0]['message']['content']
+                    if response.status_code == 200:
+                        result = response.json()
+                        answer = result['choices'][0]['message']['content']
 
-                            # 添加引用来源
-                            if relevant_chunks:
-                                answer += "\n\n---\n📖 **参考来源**\n"
-                                for i, chunk in enumerate(relevant_chunks[:2], 1):
-                                    preview = chunk['content'][:100] + "..."
-                                    answer += f"{i}. {chunk['file']}: {preview}\n"
+                        # 添加引用来源
+                        if relevant_chunks:
+                            answer += "\n\n---\n"
+                            answer += "📖 **参考来源**\n"
+                            for i, chunk in enumerate(relevant_chunks[:3], 1):
+                                file_name = chunk['file']
+                                preview = chunk['content'][:100] + "..." if len(chunk['content']) > 100 else chunk[
+                                    'content']
+                                answer += f"{i}. **{file_name}**: {preview}\n\n"
 
-                            st.markdown(answer)
-                            st.session_state.messages.append({"role": "assistant", "content": answer})
-                        else:
-                            error_msg = f"API调用失败: {response.status_code}"
-                            st.error(error_msg)
-                            st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-                    except Exception as e:
-                        error_msg = f"发生错误: {str(e)}"
+                        st.markdown(answer)
+                        st.session_state.messages.append({"role": "assistant", "content": answer})
+                    else:
+                        error_msg = f"❌ API调用失败 (错误码: {response.status_code})"
+                        try:
+                            error_detail = response.json()
+                            error_msg += f"\n详情: {error_detail}"
+                        except:
+                            pass
                         st.error(error_msg)
                         st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
-st.markdown('</div>', unsafe_allow_html=True)
+                except requests.exceptions.Timeout:
+                    error_msg = "❌ API调用超时，请重试"
+                    st.error(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                except Exception as e:
+                    error_msg = f"❌ 发生错误: {str(e)}"
+                    st.error(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 # 底部
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: white; padding: 1rem;'>
+<div style='text-align: center; color: gray; padding: 1rem;'>
     基于 DeepSeek API + Streamlit 构建 | 需要有效的API密钥
 </div>
 """, unsafe_allow_html=True)
