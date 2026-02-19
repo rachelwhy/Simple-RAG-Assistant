@@ -1,4 +1,4 @@
-# app.py - 完整的DeepSeek RAG助手
+# app.py - 完整的DeepSeek RAG助手（改进检索版）
 import streamlit as st
 import os
 import requests
@@ -41,6 +41,14 @@ st.markdown("""
         padding: 1rem;
         border-radius: 10px;
         border-left: 4px solid #ffc107;
+        margin-bottom: 1rem;
+    }
+    .info-box {
+        background-color: #d1ecf1;
+        color: #0c5460;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 4px solid #17a2b8;
         margin-bottom: 1rem;
     }
 </style>
@@ -127,6 +135,11 @@ with st.sidebar:
                         chunks = [c.strip() for c in content.split('\n\n') if len(c.strip()) > 50]
                         if not chunks:  # 如果没有分段，按句子分
                             chunks = [c.strip() for c in content.split('。') if len(c.strip()) > 30]
+
+                        # 如果还是没分块，按固定长度分
+                        if not chunks:
+                            chunk_size = 200
+                            chunks = [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
 
                         st.session_state.documents[file.name] = {
                             'content': content,
@@ -217,45 +230,91 @@ if prompt := st.chat_input("请输入您的问题..."):
         with st.chat_message("assistant"):
             with st.spinner("🤔 DeepSeek正在思考..."):
                 try:
-                    # 1. 检索相关文档内容
+                    # 1. 检索相关文档内容 - 改进版
                     relevant_chunks = []
-                    if st.session_state.documents:
-                        prompt_words = set(prompt.lower().split())
-                        for name, info in st.session_state.documents.items():
-                            for chunk in info['chunks']:
-                                chunk_words = set(chunk.lower().split())
-                                overlap = len(prompt_words & chunk_words)
-                                if overlap > 0:
-                                    relevant_chunks.append({
-                                        'file': name,
-                                        'content': chunk,
-                                        'relevance': overlap
-                                    })
 
-                        # 按相关性排序
-                        relevant_chunks.sort(key=lambda x: x['relevance'], reverse=True)
+                    # 把问题分词
+                    prompt_words = prompt.lower().split()
+                    # 去除常见停用词
+                    stop_words = ['的', '了', '在', '是', '我', '你', '他', '这', '那', '和', '与', '或', '吗', '呢',
+                                  '啊', '把', '被', '让', '给', '对', '对于', '关于']
+                    prompt_words = [w for w in prompt_words if w not in stop_words and len(w) > 1]
 
-                        if relevant_chunks:
-                            context = "\n\n---\n\n".join([f"【来自 {c['file']}】\n{c['content']}"
-                                                          for c in relevant_chunks[:5]])
-                        else:
-                            context = "没有找到相关文档内容"
+                    # 如果没有有效关键词，就用原问题
+                    if not prompt_words:
+                        prompt_words = prompt.lower().split()
+
+                    for name, info in st.session_state.documents.items():
+                        for i, chunk in enumerate(info['chunks']):
+                            chunk_lower = chunk.lower()
+                            # 计算匹配分数
+                            score = 0
+                            matched_words = []
+                            for word in prompt_words:
+                                if word in chunk_lower:
+                                    score += 1
+                                    matched_words.append(word)
+
+                            # 如果匹配到关键词，添加到结果
+                            if score > 0:
+                                # 计算匹配密度
+                                density = score / len(prompt_words) if prompt_words else 0
+                                relevant_chunks.append({
+                                    'file': name,
+                                    'content': chunk,
+                                    'score': score,
+                                    'density': density,
+                                    'matched_words': matched_words,
+                                    'chunk_id': i
+                                })
+
+                    # 按相关性排序（先按匹配词数，再按密度）
+                    relevant_chunks.sort(key=lambda x: (x['score'], x['density']), reverse=True)
+                    top_chunks = relevant_chunks[:5]  # 取前5个
+
+                    # 构建上下文
+                    if top_chunks:
+                        context = "\n\n---\n\n".join([f"【来自文档: {c['file']}】\n{c['content']}"
+                                                      for c in top_chunks])
+                        # 显示找到的相关信息
+                        st.markdown(f"""
+                        <div class="info-box">
+                            ℹ️ 找到 {len(top_chunks)} 个相关段落
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
-                        context = "没有上传任何文档"
+                        context = "没有找到直接相关的文档内容"
+                        st.markdown("""
+                        <div class="info-box">
+                            ℹ️ 在文档中没有找到与问题直接相关的内容，我将尝试让AI基于文档整体理解回答。
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                    # 2. 构建提示词
+                        # 如果没有匹配的，用整个文档作为上下文
+                        all_content = []
+                        for name, info in st.session_state.documents.items():
+                            all_content.append(f"【文档: {name}】\n{info['content'][:1000]}")  # 只取前1000字
+                        context = "\n\n---\n\n".join(all_content)
+
+                    # 2. 构建提示词 - 改进版
                     system_prompt = """你是一个专业的文档问答助手。请严格基于提供的文档内容回答问题。
-如果文档中没有相关信息，请明确告知用户"根据当前文档，我无法回答这个问题"。
-回答要准确、简洁、有条理，使用中文。"""
 
-                    user_prompt = f"""请基于以下文档内容回答问题：
+重要规则：
+1. 首先仔细阅读用户上传的文档内容
+2. 如果文档中有相关信息，请直接引用并详细回答
+3. 如果文档中没有直接答案，但可以通过文档内容合理推断，请说明你的推理过程
+4. 只有当文档内容完全不相关或完全没有信息时，才说"根据当前文档，我无法回答这个问题"
+5. 回答要详细、准确、有条理，使用中文
+6. 尽可能引用文档中的原话"""
+
+                    user_prompt = f"""请仔细阅读以下文档内容，然后回答问题。
 
 文档内容：
 {context}
 
 问题：{prompt}
 
-回答："""
+请基于文档内容详细回答："""
 
                     # 3. 调用DeepSeek API
                     headers = {
@@ -269,8 +328,8 @@ if prompt := st.chat_input("请输入您的问题..."):
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
                         ],
-                        "temperature": 0.3,
-                        "max_tokens": 2000,
+                        "temperature": 0.7,  # 提高温度，让回答更灵活
+                        "max_tokens": 3000,
                         "stream": False
                     }
 
@@ -278,7 +337,7 @@ if prompt := st.chat_input("请输入您的问题..."):
                         "https://api.deepseek.com/v1/chat/completions",
                         headers=headers,
                         json=data,
-                        timeout=30
+                        timeout=60
                     )
 
                     if response.status_code == 200:
@@ -286,12 +345,12 @@ if prompt := st.chat_input("请输入您的问题..."):
                         answer = result['choices'][0]['message']['content']
 
                         # 添加引用来源
-                        if relevant_chunks:
+                        if top_chunks:
                             answer += "\n\n---\n"
                             answer += "📖 **参考来源**\n"
-                            for i, chunk in enumerate(relevant_chunks[:3], 1):
+                            for i, chunk in enumerate(top_chunks[:3], 1):
                                 file_name = chunk['file']
-                                preview = chunk['content'][:100] + "..." if len(chunk['content']) > 100 else chunk[
+                                preview = chunk['content'][:150] + "..." if len(chunk['content']) > 150 else chunk[
                                     'content']
                                 answer += f"{i}. **{file_name}**: {preview}\n\n"
 
